@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bloxd - Multiplayer Parkour</title>
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            background: #1a1a2e;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: 'Segoe UI', Arial, sans-serif;
+        }
+        #game-container {
+            border: 3px solid #4a4a6a;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 0 30px rgba(100, 100, 200, 0.3);
+        }
+        #ui-overlay {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            right: 10px;
+            display: flex;
+            justify-content: space-between;
+            pointer-events: none;
+        }
+        .ui-panel {
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px 15px;
+            border-radius: 8px;
+            color: #fff;
+            font-size: 14px;
+        }
+        .ui-panel .coins, .ui-panel .score {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .ui-panel .coins::before {
+            content: "🪙";
+        }
+        .ui-panel .score::before {
+            content: "⭐";
+        }
+        #room-info {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.9);
+            padding: 30px;
+            border-radius: 12px;
+            text-align: center;
+            color: #fff;
+            display: none;
+        }
+        #room-info h2 { margin-bottom: 20px; color: #7c7cff; }
+        #room-info input {
+            padding: 10px 15px;
+            font-size: 18px;
+            border: 2px solid #4a4a6a;
+            border-radius: 6px;
+            background: #2a2a4a;
+            color: #fff;
+            width: 200px;
+            text-align: center;
+            margin-right: 10px;
+        }
+        #room-info button {
+            padding: 10px 20px;
+            font-size: 16px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        #room-info .btn-primary {
+            background: #7c7cff;
+            color: #fff;
+        }
+        #room-info .btn-secondary {
+            background: #4a4a6a;
+            color: #fff;
+        }
+        #players-list {
+            margin-top: 15px;
+            text-align: left;
+        }
+        #players-list li {
+            padding: 5px 0;
+            color: #aaa;
+        }
+        .controls-hint {
+            position: absolute;
+            bottom: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.7);
+            padding: 8px 16px;
+            border-radius: 6px;
+            color: #888;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <div id="ui-overlay">
+            <div class="ui-panel" id="player-count">Players: 0</div>
+            <div class="ui-panel" id="room-code">Room: -</div>
+        </div>
+        <div id="room-info">
+            <h2>Bloxd Multiplayer</h2>
+            <div id="menu-buttons">
+                <button class="btn-primary" id="btn-create">Create Room</button>
+                <button class="btn-secondary" id="btn-join">Join Room</button>
+            </div>
+            <div id="join-form" style="display:none;">
+                <input type="text" id="room-input" placeholder="Room Code" maxlength="6">
+                <button class="btn-primary" id="btn-join-confirm">Join</button>
+            </div>
+            <div id="players-list">
+                <h3 style="color:#7c7cff;margin-bottom:10px;">Players</h3>
+                <ul id="players-ul"></ul>
+            </div>
+            <p id="error-msg" style="color:#ff6b6b;margin-top:10px;"></p>
+        </div>
+        <div class="controls-hint">WASD / Arrow Keys to move | Space to jump</div>
+    </div>
+
+    <script src="src/scenes/PreloadScene.js"></script>
+    <script src="src/network/NetworkManager.js"></script>
+    <script src="src/scenes/MenuScene.js"></script>
+    <script src="src/scenes/GameScene.js"></script>
+    <script src="game.js"></script>
+</body>
+</html>
