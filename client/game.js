@@ -15,7 +15,7 @@ const config = {
             debug: false
         }
     },
-    scene: [PreloadScene, MenuScene, LevelScene, GameScene]
+    scene: [PreloadScene, MenuScene, LevelScene, LobbyScene, GameScene]
 };
 
 // 创建游戏实例

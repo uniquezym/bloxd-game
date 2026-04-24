@@ -57,7 +57,8 @@ class Room {
             vx: 0,
             vy: 0,
             input: { left: false, right: false, jump: false },
-            color: this.getPlayerColor(this.players.size)
+            color: this.getPlayerColor(this.players.size),
+            ready: false
         });
     }
 
@@ -114,6 +115,9 @@ io.on('connection', (socket) => {
         playerId = `player_1`;
         room.addPlayer(socket.id, { playerId });
         currentRoom = roomCode;
+
+        // 房主自动 ready
+        room.players.get(socket.id).ready = true;
 
         socket.join(roomCode);
         socket.emit(CONSTANTS.MSG_TYPES.ROOM_CREATED, {
@@ -183,6 +187,68 @@ io.on('connection', (socket) => {
         }
     });
 
+    // 玩家准备状态
+    socket.on(CONSTANTS.MSG_TYPES.PLAYER_READY, ({ ready }) => {
+        if (currentRoom) {
+            const room = rooms.get(currentRoom);
+            if (room && room.players.has(socket.id)) {
+                room.players.get(socket.id).ready = ready;
+                io.to(currentRoom).emit(CONSTANTS.MSG_TYPES.PLAYER_READY_STATE, {
+                    playerId,
+                    ready
+                });
+            }
+        }
+    });
+
+    // 踢出玩家
+    socket.on(CONSTANTS.MSG_TYPES.KICK_PLAYER, ({ targetSocketId }) => {
+        if (currentRoom) {
+            const room = rooms.get(currentRoom);
+            if (!room) return;
+
+            // 检查是否是房主
+            if (room.hostId !== socket.id) {
+                socket.emit(CONSTANTS.MSG_TYPES.ERROR, { message: 'Only host can kick players' });
+                return;
+            }
+
+            if (room.players.has(targetSocketId)) {
+                const targetPlayer = room.players.get(targetSocketId);
+                room.removePlayer(targetSocketId);
+
+                // 向被踢玩家发送事件
+                io.to(targetSocketId).emit(CONSTANTS.MSG_TYPES.PLAYER_KICKED);
+                io.to(targetSocketId).emit(CONSTANTS.MSG_TYPES.ERROR, { message: 'You have been kicked from the room' });
+
+                // 向房间内其他人发送玩家离开事件
+                socket.to(currentRoom).emit(CONSTANTS.MSG_TYPES.PLAYER_LEFT, {
+                    socketId: targetSocketId,
+                    playerId: targetPlayer.playerId
+                });
+
+                console.log(`Player ${targetPlayer.playerId} was kicked from room ${currentRoom}`);
+            }
+        }
+    });
+
+    // 开始游戏
+    socket.on(CONSTANTS.MSG_TYPES.GAME_START, () => {
+        if (currentRoom) {
+            const room = rooms.get(currentRoom);
+            if (!room) return;
+
+            // 检查是否是房主
+            if (room.hostId !== socket.id) {
+                socket.emit(CONSTANTS.MSG_TYPES.ERROR, { message: 'Only host can start the game' });
+                return;
+            }
+
+            room.gameState = 'playing';
+            io.to(currentRoom).emit(CONSTANTS.MSG_TYPES.GAME_START);
+        }
+    });
+
     // 玩家输入
     socket.on(CONSTANTS.MSG_TYPES.PLAYER_INPUT, (input) => {
         if (currentRoom) {
@@ -245,7 +311,7 @@ setInterval(() => {
 }, 60000);
 
 // 启动服务器
-const PORT = process.env.PORT || process.env.SERVER_PORT || CONSTANTS.SERVER_PORT || 3000;
+const PORT = process.env.SERVER_PORT || process.env.PORT || 3000;
 server.listen(PORT, () => {
     console.log(`
 ╔═══════════════════════════════════════╗

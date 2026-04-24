@@ -33,6 +33,14 @@ class GameScene extends Phaser.Scene {
 
     shutdown() {
         window.removeEventListener('touch-input', this._touchHandler);
+        // 清理其他玩家sprites
+        if (this.otherPlayerSprites) {
+            for (const [playerId, spriteData] of this.otherPlayerSprites) {
+                if (spriteData.sprite) spriteData.sprite.destroy();
+                if (spriteData.label) spriteData.label.destroy();
+            }
+            this.otherPlayerSprites.clear();
+        }
     }
 
     saveLevelScore(levelId, score, coins) {
@@ -85,6 +93,10 @@ class GameScene extends Phaser.Scene {
 
     create() {
         this.gameStarted = false;
+        this.isInCountdown = false;
+        this.canMove = false;
+        this.countdownText = null;
+        this.otherPlayerSprites = new Map();
 
         const { bgColor, worldWidth, worldHeight, startX, startY } = this.level;
 
@@ -122,8 +134,12 @@ class GameScene extends Phaser.Scene {
         // 显示关卡名称
         this.showLevelIntro();
 
-        // 开始倒计时
-        this.showCountdown(3);
+        // 联机模式等待 game_start 事件触发倒计时，单机模式直接开始
+        if (this.isOnline) {
+            // 等待服务器下发 game_start
+        } else {
+            this.time.delayedCall(1500, () => this.countdownStart());
+        }
     }
 
     showLevelIntro() {
@@ -202,6 +218,71 @@ class GameScene extends Phaser.Scene {
                     this.gameStarted = true;
                 }
             });
+        }
+    }
+
+    countdownStart() {
+        if (this.isInCountdown) return;
+        this.isInCountdown = true;
+        this.canMove = false;
+
+        const cam = this.cameras.main;
+        const cx = cam.scrollX + cam.width / 2;
+        const cy = cam.scrollY + cam.height / 2;
+
+        // 显示"游戏即将开始..."
+        const hintText = this.add.text(cx, cy - 100, '游戏即将开始...', {
+            fontSize: '32px',
+            color: '#ffffff',
+            fontFamily: 'Arial Black'
+        }).setOrigin(0.5).setScrollFactor(0).setDepth(99);
+
+        const colors = { 3: '#ff4444', 2: '#ffff44', 1: '#44ff44' };
+        let currentCount = 3;
+
+        const showNumber = (num) => {
+            if (this.countdownText) this.countdownText.destroy();
+
+            const color = colors[num] || '#FFD700';
+            const text = num === 0 ? 'GO!' : num.toString();
+
+            this.countdownText = this.add.text(cx, cy, text, {
+                fontSize: '120px',
+                color: color,
+                fontFamily: 'Arial Black',
+                stroke: '#000000',
+                strokeThickness: 6
+            }).setOrigin(0.5).setScrollFactor(0).setDepth(100);
+
+            this.tweens.add({
+                targets: this.countdownText,
+                scale: { from: 0.3, to: 1.2 },
+                alpha: { from: 1, to: 0.8 },
+                duration: 400,
+                ease: 'Cubic.easeOut'
+            });
+        };
+
+        // 链式延迟调用显示 3-2-1-GO!
+        this.time.delayedCall(800, () => {
+            hintText.destroy();
+            showNumber(3);
+        });
+        this.time.delayedCall(800 + 800, () => showNumber(2));
+        this.time.delayedCall(800 + 800 + 800, () => showNumber(1));
+        this.time.delayedCall(800 + 800 + 800 + 800, () => {
+            showNumber(0);
+            this.time.delayedCall(600, () => this.countdownEnd());
+        });
+    }
+
+    countdownEnd() {
+        this.isInCountdown = false;
+        this.gameStarted = true;
+        this.canMove = true;
+        if (this.countdownText) {
+            this.countdownText.destroy();
+            this.countdownText = null;
         }
     }
 
@@ -369,7 +450,7 @@ class GameScene extends Phaser.Scene {
     }
 
     hitHazard() {
-        if (this.isRespawning || !this.gameStarted) return;
+        if (this.isRespawning || !this.gameStarted || this.isInCountdown) return;
 
         this.isRespawning = true;
         this.cameras.main.shake(200, 0.02);
@@ -450,60 +531,88 @@ class GameScene extends Phaser.Scene {
     }
 
     setupNetworkEvents() {
-        if (this.isOnline && this.network) {
-            this.network.events.on('player_joined', (data) => this.addRemotePlayer(data));
-            this.network.events.on('player_left', (data) => this.removeRemotePlayer(data.playerId));
-            this.network.events.on('game_state', (data) => this.updateRemotePlayers(data));
+        if (!this.isOnline || !this.network) return;
 
-            this.time.addEvent({
-                delay: 50,
-                callback: () => this.sendPosition(),
-                loop: true
-            });
-        }
+        this.network.events.on('room_joined', (data) => {
+            // 处理已有玩家列表
+            if (data.players) {
+                for (const [id, playerData] of Object.entries(data.players)) {
+                    if (id !== this.playerId) {
+                        this.addRemotePlayer({ playerId: id, ...playerData });
+                    }
+                }
+            }
+        });
+
+        this.network.events.on('player_joined', (data) => this.addRemotePlayer(data));
+        this.network.events.on('player_left', (data) => this.removeRemotePlayer(data.playerId));
+        this.network.events.on('game_state', (data) => this.updateRemotePlayers(data));
+
+        // 监听服务器下发游戏开始倒计时
+        this.network.events.on('game_start', () => {
+            this.countdownStart();
+        });
+
+        this.time.addEvent({
+            delay: 50,
+            callback: () => this.sendPosition(),
+            loop: true
+        });
     }
 
     addRemotePlayer(data) {
+        if (!this.isOnline) return;
         if (data.playerId === this.playerId) return;
+        if (this.otherPlayerSprites.has(data.playerId)) return;
 
-        const remote = this.physics.add.sprite(data.x || 100, data.y || 500, 'player');
-        remote.setTint(0xff7c7c);
+        const x = data.x || 100;
+        const y = data.y || 500;
+        const color = data.color || 0xff7c7c;
+
+        const remote = this.physics.add.sprite(x, y, 'player');
+        remote.setTint(color);
         remote.setCollideWorldBounds(true);
         remote.body.setSize(28, 28);
+        remote.body.setAllowGravity(true);
 
-        const label = this.add.text(data.x || 100, (data.y || 500) - 20, data.playerName || 'P2', {
+        const label = this.add.text(x, y - 20, data.playerName || 'P2', {
             fontSize: '12px',
             color: '#fff',
-            backgroundColor: '#ff7c7c',
+            backgroundColor: '#' + color.toString(16).padStart(6, '0'),
             padding: { x: 4, y: 2 }
         }).setOrigin(0.5);
 
-        this.otherPlayers.set(data.playerId, { sprite: remote, label });
+        this.otherPlayerSprites.set(data.playerId, {
+            sprite: remote,
+            label: label,
+            targetX: x,
+            targetY: y
+        });
     }
 
     removeRemotePlayer(playerId) {
-        const player = this.otherPlayers.get(playerId);
+        const player = this.otherPlayerSprites.get(playerId);
         if (player) {
-            player.sprite.destroy();
-            player.label.destroy();
-            this.otherPlayers.delete(playerId);
+            if (player.sprite) player.sprite.destroy();
+            if (player.label) player.label.destroy();
+            this.otherPlayerSprites.delete(playerId);
         }
     }
 
     updateRemotePlayers(gameState) {
+        if (!this.isOnline) return;
+
         if (gameState.players) {
             for (const [id, data] of Object.entries(gameState.players)) {
                 if (id === this.playerId) continue;
-                let player = this.otherPlayers.get(id);
-                if (!player) {
+                let spriteData = this.otherPlayerSprites.get(id);
+                if (!spriteData) {
                     this.addRemotePlayer({ playerId: id, ...data });
-                    player = this.otherPlayers.get(id);
+                    spriteData = this.otherPlayerSprites.get(id);
                 }
-                if (player && data.x !== undefined) {
-                    player.sprite.x = data.x;
-                    player.sprite.y = data.y;
-                    player.label.x = data.x;
-                    player.label.y = data.y - 20;
+                if (spriteData && data.x !== undefined && data.y !== undefined) {
+                    spriteData.targetX = data.x;
+                    spriteData.targetY = data.y;
                 }
             }
         }
@@ -521,14 +630,35 @@ class GameScene extends Phaser.Scene {
     }
 
     update(time, delta) {
+        if (this.isInCountdown) {
+            this.canMove = false;
+            return;
+        }
         if (!this.gameStarted) return;
 
         this.handleInput();
         this.updatePlayerLabel();
         this.updateMovingPlatforms(delta);
         this.updateFires(delta);
+        this.updateRemotePlayerPositions(delta);
         this.checkWinCondition();
         this.checkFailCondition();
+    }
+
+    updateRemotePlayerPositions(delta) {
+        if (!this.isOnline) return;
+
+        const LERP = 0.2;
+        for (const [playerId, spriteData] of this.otherPlayerSprites) {
+            if (spriteData.sprite && spriteData.targetX !== undefined) {
+                spriteData.sprite.x = Phaser.Math.Linear(spriteData.sprite.x, spriteData.targetX, LERP);
+                spriteData.sprite.y = Phaser.Math.Linear(spriteData.sprite.y, spriteData.targetY, LERP);
+                if (spriteData.label) {
+                    spriteData.label.x = spriteData.sprite.x;
+                    spriteData.label.y = spriteData.sprite.y - 20;
+                }
+            }
+        }
     }
 
     updateFires(delta) {

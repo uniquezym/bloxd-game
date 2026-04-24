@@ -25,6 +25,8 @@ const CONSTANTS = {
     JOIN_ROOM: 'join_room',
     LEAVE_ROOM: 'leave_room',
     PLAYER_INPUT: 'player_input',
+    PLAYER_READY: 'player_ready',
+    KICK_PLAYER: 'kick_player',
     CHAT_MESSAGE: 'chat_message',
 
     // 服务器 -> 客户端
@@ -32,6 +34,8 @@ const CONSTANTS = {
     ROOM_JOINED: 'room_joined',
     PLAYER_JOINED: 'player_joined',
     PLAYER_LEFT: 'player_left',
+    PLAYER_READY_STATE: 'player_ready_state',
+    PLAYER_KICKED: 'player_kicked',
     GAME_STATE: 'game_state',
     GAME_START: 'game_start',
     GAME_OVER: 'game_over',

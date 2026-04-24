@@ -156,19 +156,21 @@ class MenuScene extends Phaser.Scene {
             });
 
         this.network.events.on('room_created', (data) => {
-            this.scene.start('GameScene', {
+            this.scene.start('LobbyScene', {
                 isOnline: true,
                 roomCode: data.roomCode,
                 playerId: data.playerId,
+                isHost: true,
                 network: this.network
             });
         });
 
         this.network.events.on('room_joined', (data) => {
-            this.scene.start('GameScene', {
+            this.scene.start('LobbyScene', {
                 isOnline: true,
                 roomCode: data.roomCode,
                 playerId: data.playerId,
+                isHost: data.isHost || false,
                 network: this.network
             });
         });
