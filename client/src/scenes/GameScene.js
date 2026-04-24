@@ -18,6 +18,18 @@ class GameScene extends Phaser.Scene {
         this.score = 0;
         this.isShowingResult = false;
         this.currentRank = null;
+        this.touchInput = { left: false, right: false, jump: false };
+        this._touchHandler = (e) => {
+            const { key, value } = e.detail;
+            if (key === 'left') this.touchInput.left = value;
+            if (key === 'right') this.touchInput.right = value;
+            if (key === 'jump') this.touchInput.jump = value;
+        };
+        window.addEventListener('touch-input', this._touchHandler);
+    }
+
+    shutdown() {
+        window.removeEventListener('touch-input', this._touchHandler);
     }
 
     saveScore(score, coins) {
@@ -41,6 +53,7 @@ class GameScene extends Phaser.Scene {
     }
 
     create() {
+        this.gameStarted = false;
         this.createWorld();
         this.createPlayer();
         this.createLevel();
@@ -54,6 +67,53 @@ class GameScene extends Phaser.Scene {
         // 相机跟随
         this.cameras.main.setBounds(0, 0, 2000, 1000);
         this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
+
+        // 开始倒计时
+        this.showCountdown(3);
+    }
+
+    showCountdown(count) {
+        const cam = this.cameras.main;
+        const cx = cam.scrollX + cam.width / 2;
+        const cy = cam.scrollY + cam.height / 2;
+
+        if (count > 0) {
+            const text = this.add.text(cx, cy, count.toString(), {
+                fontSize: '96px',
+                color: '#ffffff',
+                fontFamily: 'Arial Black'
+            }).setOrigin(0.5).setScrollFactor(0).setDepth(100);
+
+            this.tweens.add({
+                targets: text,
+                scale: { from: 0.5, to: 1.5 },
+                alpha: { from: 1, to: 0 },
+                duration: 800,
+                ease: 'Cubic.easeOut',
+                onComplete: () => {
+                    text.destroy();
+                    this.time.delayedCall(200, () => this.showCountdown(count - 1));
+                }
+            });
+        } else {
+            const goText = this.add.text(cx, cy, 'GO!', {
+                fontSize: '72px',
+                color: '#7cff7c',
+                fontFamily: 'Arial Black'
+            }).setOrigin(0.5).setScrollFactor(0).setDepth(100);
+
+            this.tweens.add({
+                targets: goText,
+                scale: { from: 0.5, to: 2 },
+                alpha: { from: 1, to: 0 },
+                duration: 600,
+                ease: 'Cubic.easeOut',
+                onComplete: () => {
+                    goText.destroy();
+                    this.gameStarted = true;
+                }
+            });
+        }
     }
 
     createWorld() {
@@ -394,10 +454,11 @@ class GameScene extends Phaser.Scene {
         }
     }
 
-    update() {
+    update(time, delta) {
+        if (!this.gameStarted) return;
         this.handleInput();
         this.updatePlayerLabel();
-        this.updateMovingPlatforms();
+        this.updateMovingPlatforms(delta);
         this.checkWinCondition();
         this.checkFailCondition();
     }
@@ -443,18 +504,39 @@ class GameScene extends Phaser.Scene {
 
             this.showScoreBoard(cam);
 
-            this.time.delayedCall(3000, () => {
+            // 返回菜单按钮
+            const menuBtnFail = this.add.text(cam.scrollX + cam.width / 2, cam.scrollY + cam.height / 2 + 180,
+                '🏠 返回菜单', {
+                fontSize: '22px',
+                color: '#ffffff',
+                fontFamily: 'Arial',
+                backgroundColor: '#7c7cff',
+                padding: { x: 20, y: 10 }
+            }).setOrigin(0.5).setScrollFactor(0).setDepth(100).setInteractive({ useHandCursor: true });
+
+            menuBtnFail.on('pointerover', () => menuBtnFail.setAlpha(0.8));
+            menuBtnFail.on('pointerout', () => menuBtnFail.setAlpha(1));
+            menuBtnFail.on('pointerdown', () => {
+                if (this.isOnline && this.network) {
+                    this.network.leaveRoom();
+                }
+                this.scene.start('MenuScene');
+            });
+
+            this.time.delayedCall(5000, () => {
+                if (menuBtnFail) menuBtnFail.destroy();
                 this.scene.restart();
             });
         });
     }
 
-    updateMovingPlatforms() {
+    updateMovingPlatforms(delta) {
+        const dt = delta ? delta / 1000 : 0.016;
         for (const platform of this.movingPlatforms) {
             const data = platform.moveData;
             if (!data) continue;
 
-            data.progress += data.speed * 0.016;
+            data.progress += data.speed * dt;
 
             const t = Math.sin(data.progress);
 
@@ -469,11 +551,11 @@ class GameScene extends Phaser.Scene {
     handleInput() {
         const onGround = this.player.body.blocked.down;
 
-        // 水平移动
-        if (this.cursors.left.isDown || this.wasd.left.isDown) {
+        // 水平移动（键盘 + 触摸）
+        if (this.cursors.left.isDown || this.wasd.left.isDown || this.touchInput.left) {
             this.player.setVelocityX(-200);
             this.inputState.left = true;
-        } else if (this.cursors.right.isDown || this.wasd.right.isDown) {
+        } else if (this.cursors.right.isDown || this.wasd.right.isDown || this.touchInput.right) {
             this.player.setVelocityX(200);
             this.inputState.right = true;
         } else {
@@ -481,10 +563,11 @@ class GameScene extends Phaser.Scene {
             this.inputState.right = false;
         }
 
-        // 跳跃
-        if ((this.cursors.up.isDown || this.wasd.up.isDown || this.spaceKey.isDown) && onGround) {
+        // 跳跃（键盘 + 触摸）
+        if ((this.cursors.up.isDown || this.wasd.up.isDown || this.spaceKey.isDown || this.touchInput.jump) && onGround) {
             this.player.setVelocityY(-380);
             this.inputState.jump = true;
+            this.touchInput.jump = false; // 触摸跳跃后重置
         } else {
             this.inputState.jump = false;
         }
@@ -555,7 +638,27 @@ class GameScene extends Phaser.Scene {
 
             this.showScoreBoard(cam);
 
-            this.time.delayedCall(3000, () => {
+            // 返回菜单按钮
+            const menuBtnWin = this.add.text(cam.scrollX + cam.width / 2, cam.scrollY + cam.height / 2 + 180,
+                '🏠 返回菜单', {
+                fontSize: '22px',
+                color: '#ffffff',
+                fontFamily: 'Arial',
+                backgroundColor: '#FFD700',
+                padding: { x: 20, y: 10 }
+            }).setOrigin(0.5).setScrollFactor(0).setDepth(100).setInteractive({ useHandCursor: true });
+
+            menuBtnWin.on('pointerover', () => menuBtnWin.setAlpha(0.8));
+            menuBtnWin.on('pointerout', () => menuBtnWin.setAlpha(1));
+            menuBtnWin.on('pointerdown', () => {
+                if (this.isOnline && this.network) {
+                    this.network.leaveRoom();
+                }
+                this.scene.start('MenuScene');
+            });
+
+            this.time.delayedCall(5000, () => {
+                if (menuBtnWin) menuBtnWin.destroy();
                 this.scene.restart();
             });
         });

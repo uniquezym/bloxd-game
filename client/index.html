@@ -111,6 +111,55 @@
             color: #888;
             font-size: 12px;
         }
+        #touch-controls {
+            display: none;
+            position: fixed;
+            bottom: 20px;
+            left: 0;
+            right: 0;
+            padding: 0 20px;
+            justify-content: space-between;
+            align-items: flex-end;
+            pointer-events: none;
+            z-index: 1000;
+        }
+        .touch-btn-group {
+            display: flex;
+            gap: 10px;
+            pointer-events: auto;
+        }
+        .touch-btn {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: rgba(124, 124, 255, 0.6);
+            border: 3px solid rgba(124, 124, 255, 0.9);
+            color: #fff;
+            font-size: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: manipulation;
+        }
+        .touch-btn:active {
+            background: rgba(124, 124, 255, 0.9);
+        }
+        .touch-btn.jump-btn {
+            width: 70px;
+            height: 70px;
+            background: rgba(0, 204, 0, 0.6);
+            border-color: rgba(0, 204, 0, 0.9);
+            font-size: 14px;
+        }
+        .touch-btn.jump-btn:active {
+            background: rgba(0, 204, 0, 0.9);
+        }
+        @media (max-width: 768px) {
+            #touch-controls { display: flex; }
+            .controls-hint { display: none; }
+        }
     </style>
 </head>
 <body>
@@ -143,5 +192,43 @@
     <script src="src/scenes/MenuScene.js"></script>
     <script src="src/scenes/GameScene.js"></script>
     <script src="game.js"></script>
+    <script>
+        // 触摸控制
+        document.addEventListener('DOMContentLoaded', function() {
+            const controls = document.createElement('div');
+            controls.id = 'touch-controls';
+            controls.innerHTML = `
+                <div class="touch-btn-group">
+                    <button class="touch-btn" id="touch-left">◀</button>
+                    <button class="touch-btn" id="touch-right">▶</button>
+                </div>
+                <div class="touch-btn-group">
+                    <button class="touch-btn jump-btn" id="touch-jump">JUMP</button>
+                </div>
+            `;
+            document.body.appendChild(controls);
+
+            // 触摸按钮事件
+            function setupTouchBtn(id, keyName) {
+                const btn = document.getElementById(id);
+                if (!btn) return;
+
+                const preventDefault = (e) => e.preventDefault();
+                btn.addEventListener('touchstart', preventDefault, { passive: false });
+                btn.addEventListener('touchend', preventDefault, { passive: false });
+
+                btn.addEventListener('touchstart', () => {
+                    window.dispatchEvent(new CustomEvent('touch-input', { detail: { key: keyName, value: true } }));
+                });
+                btn.addEventListener('touchend', () => {
+                    window.dispatchEvent(new CustomEvent('touch-input', { detail: { key: keyName, value: false } }));
+                });
+            }
+
+            setupTouchBtn('touch-left', 'left');
+            setupTouchBtn('touch-right', 'right');
+            setupTouchBtn('touch-jump', 'jump');
+        });
+    </script>
 </body>
 </html>

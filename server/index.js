@@ -245,7 +245,7 @@ setInterval(() => {
 }, 60000);
 
 // 启动服务器
-const PORT = process.env.PORT || CONSTANTS.SERVER_PORT || 3000;
+const PORT = process.env.PORT || process.env.SERVER_PORT || CONSTANTS.SERVER_PORT || 3000;
 server.listen(PORT, () => {
     console.log(`
 ╔═══════════════════════════════════════╗
