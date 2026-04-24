@@ -583,9 +583,27 @@ class GameScene extends Phaser.Scene {
             this.showScoreBoard(cam);
             this.addMenuButtons(cam, false);
 
-            // 重试计时
-            this.time.delayedCall(5000, () => {
-                this.scene.restart();
+            // 重试倒计时显示
+            let retrySecs = 5;
+            const retryText = this.add.text(cam.scrollX + cam.width / 2, cam.scrollY + cam.height / 2 + 170,
+                `${retrySecs}秒后自动重试...`, {
+                fontSize: '16px',
+                color: '#aaaaaa',
+                fontFamily: 'Arial'
+            }).setOrigin(0.5).setScrollFactor(0);
+
+            const retryTimer = this.time.addEvent({
+                delay: 1000,
+                callback: () => {
+                    retrySecs--;
+                    if (retrySecs > 0) {
+                        retryText.setText(`${retrySecs}秒后自动重试...`);
+                    } else {
+                        retryTimer.remove();
+                        this.scene.restart();
+                    }
+                },
+                repeat: 4
             });
         });
     }
@@ -700,6 +718,11 @@ class GameScene extends Phaser.Scene {
                 fontFamily: 'Arial'
             }).setOrigin(0.5).setScrollFactor(0);
 
+            // 新关卡解锁庆祝动画
+            if (this.level.id < LEVEL_COUNT) {
+                this.showLevelUnlocked(cam, this.level.id + 1);
+            }
+
             this.showScoreBoard(cam);
             this.addMenuButtons(cam, true);
 
@@ -770,5 +793,40 @@ class GameScene extends Phaser.Scene {
                 fontFamily: 'Arial'
             }).setOrigin(0.5).setScrollFactor(0);
         }
+    }
+
+    showLevelUnlocked(cam, nextLevelId) {
+        const nextLevel = LEVELS[nextLevelId - 1];
+        if (!nextLevel) return;
+
+        const unlockY = cam.scrollY + cam.height / 2 + 100;
+
+        // 金色解锁提示
+        const unlockText = this.add.text(cam.scrollX + cam.width / 2, unlockY,
+            `🔓 新关卡解锁: ${nextLevel.name}`, {
+            fontSize: '22px',
+            color: '#FFD700',
+            fontFamily: 'Arial Black'
+        }).setOrigin(0.5).setScrollFactor(0).setAlpha(0).setDepth(50);
+
+        // 缩放弹出动画
+        this.tweens.add({
+            targets: unlockText,
+            alpha: 1,
+            scaleX: { from: 0.5, to: 1 },
+            scaleY: { from: 0.5, to: 1 },
+            duration: 500,
+            ease: 'Back.easeOut'
+        });
+
+        // 闪烁动画
+        this.tweens.add({
+            targets: unlockText,
+            alpha: { from: 1, to: 0.5 },
+            duration: 600,
+            yoyo: true,
+            repeat: -1,
+            ease: 'Sine.easeInOut'
+        });
     }
 }
