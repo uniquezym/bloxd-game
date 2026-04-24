@@ -68,9 +68,9 @@ class MenuScene extends Phaser.Scene {
             this.showJoinForm();
         });
 
-        // 单人游戏按钮
-        this.createButton(width / 2, centerY + 130, 'Solo Play', '#ff7c7c', () => {
-            this.scene.start('GameScene', { isOnline: false, roomCode: null });
+        // 关卡选择按钮
+        this.createButton(width / 2, centerY + 130, '关卡模式', '#ff7c7c', () => {
+            this.scene.start('LevelScene');
         });
 
         // 输入框

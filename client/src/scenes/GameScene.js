@@ -9,9 +9,12 @@ class GameScene extends Phaser.Scene {
         this.roomCode = data.roomCode || null;
         this.network = data.network || null;
         this.playerId = data.playerId || 'local';
+        this.levelId = data.levelId || 1;
+        this.level = LEVELS[this.levelId - 1] || LEVELS[0];
         this.otherPlayers = new Map();
         this.coins = new Map();
         this.hazards = [];
+        this.fires = [];
         this.bouncePads = [];
         this.movingPlatforms = [];
         this.collectedCoins = 0;
@@ -32,14 +35,29 @@ class GameScene extends Phaser.Scene {
         window.removeEventListener('touch-input', this._touchHandler);
     }
 
+    saveLevelScore(levelId, score, coins) {
+        try {
+            let allScores = {};
+            const existing = localStorage.getItem('bloxd_level_scores');
+            if (existing) allScores = JSON.parse(existing);
+
+            if (!allScores[levelId] || score > allScores[levelId].score) {
+                allScores[levelId] = { score, coins, date: new Date().toLocaleDateString() };
+                localStorage.setItem('bloxd_level_scores', JSON.stringify(allScores));
+            }
+        } catch (e) {}
+    }
+
     saveScore(score, coins) {
+        this.saveLevelScore(this.levelId, score, coins);
+
         const date = new Date().toLocaleDateString();
-        const newRecord = { score, coins, date };
+        const newRecord = { score, coins, date, levelId: this.levelId };
 
         let topScores = this.getTopScores();
         topScores.push(newRecord);
         topScores.sort((a, b) => b.score - a.score);
-        topScores = topScores.slice(0, 10);
+        topScores = topScores.slice(0, 20);
 
         localStorage.setItem('bloxd_top_scores', JSON.stringify(topScores));
 
@@ -52,24 +70,95 @@ class GameScene extends Phaser.Scene {
         return data ? JSON.parse(data) : [];
     }
 
+    unlockNextLevel() {
+        try {
+            let unlocked = [];
+            const existing = localStorage.getItem('bloxd_unlocked_levels');
+            if (existing) unlocked = JSON.parse(existing);
+            const nextId = this.levelId + 1;
+            if (!unlocked.includes(nextId) && nextId <= LEVEL_COUNT) {
+                unlocked.push(nextId);
+                localStorage.setItem('bloxd_unlocked_levels', JSON.stringify(unlocked));
+            }
+        } catch (e) {}
+    }
+
     create() {
         this.gameStarted = false;
-        this.createWorld();
-        this.createPlayer();
-        this.createLevel();
+
+        const { bgColor, worldWidth, worldHeight, startX, startY } = this.level;
+
+        // 背景
+        this.cameras.main.setBackgroundColor(bgColor);
+
+        // 物理世界边界
+        this.physics.world.setBounds(0, 0, worldWidth, worldHeight);
+
+        // 相机跟随
+        this.cameras.main.setBounds(0, 0, worldWidth, worldHeight);
+
+        // 静态平台组
+        this.platforms = this.physics.add.staticGroup();
+        this.grounds = this.physics.add.staticGroup();
+
+        // 边界
+        this.grounds.create(worldWidth / 2, worldHeight - 16, 'ground').setScale(worldWidth / 32, 1).refreshBody();
+        this.grounds.create(16, worldHeight / 2, 'ground').setScale(1, worldHeight / 32).refreshBody();
+        this.grounds.create(worldWidth - 16, worldHeight / 2, 'ground').setScale(1, worldHeight / 32).refreshBody();
+
+        // 创建玩家
+        this.createPlayer(startX, startY);
+
+        // 创建关卡
+        this.createLevel(this.level);
+
+        // 相机跟随
+        this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
+
         this.setupControls();
         this.setupNetworkEvents();
         this.updateUI();
 
-        // 物理世界边界
-        this.physics.world.setBounds(0, 0, 2000, 1000);
-
-        // 相机跟随
-        this.cameras.main.setBounds(0, 0, 2000, 1000);
-        this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
+        // 显示关卡名称
+        this.showLevelIntro();
 
         // 开始倒计时
         this.showCountdown(3);
+    }
+
+    showLevelIntro() {
+        const cam = this.cameras.main;
+        const cx = cam.scrollX + cam.width / 2;
+        const cy = cam.scrollY + cam.height / 2;
+
+        const intro = this.add.container(cx, cy);
+        intro.setDepth(200);
+
+        const bg = this.add.rectangle(0, 0, 400, 150, 0x000000, 0.85);
+        bg.setOrigin(0.5);
+        intro.add(bg);
+
+        const title = this.add.text(0, -40, `关卡 ${this.level.id}: ${this.level.name}`, {
+            fontSize: '32px',
+            fontFamily: 'Arial Black, Arial',
+            color: '#7c7cff'
+        }).setOrigin(0.5);
+        intro.add(title);
+
+        const desc = this.add.text(0, 10, this.level.description, {
+            fontSize: '16px',
+            color: '#aaa',
+            fontFamily: 'Arial'
+        }).setOrigin(0.5);
+        intro.add(desc);
+
+        this.tweens.add({
+            targets: intro,
+            alpha: { from: 1, to: 0 },
+            delay: 1500,
+            duration: 500,
+            onComplete: () => intro.destroy()
+        });
     }
 
     showCountdown(count) {
@@ -116,126 +205,93 @@ class GameScene extends Phaser.Scene {
         }
     }
 
-    createWorld() {
-        // 背景色
-        this.cameras.main.setBackgroundColor(0x87CEEB);
-
-        // 创建地面组
-        this.platforms = this.physics.add.staticGroup();
-        this.grounds = this.physics.add.staticGroup();
-
-        // 边界墙
-        const worldWidth = 2000;
-        const worldHeight = 1000;
-
-        // 底部
-        this.grounds.create(worldWidth / 2, worldHeight - 16, 'ground').setScale(worldWidth / 32, 1).refreshBody();
-        // 左侧
-        this.grounds.create(16, worldHeight / 2, 'ground').setScale(1, worldHeight / 32).refreshBody();
-        // 右侧
-        this.grounds.create(worldWidth - 16, worldHeight / 2, 'ground').setScale(1, worldHeight / 32).refreshBody();
-    }
-
-    createPlayer() {
-        // 创建玩家精灵
-        this.player = this.physics.add.sprite(100, 500, 'player');
-
-        // 玩家物理属性
+    createPlayer(x, y) {
+        this.player = this.physics.add.sprite(x, y, 'player');
         this.player.setCollideWorldBounds(true);
         this.player.setBounce(0.1);
-        this.player.setDrag(800, 0);
+        this.player.setDrag(this.level.iceMode ? 100 : 800, 0);
         this.player.body.setSize(28, 28);
         this.player.body.setOffset(2, 2);
 
-        // 玩家标签
-        this.playerLabel = this.add.text(100, 480, this.isOnline ? `P1` : 'Solo', {
+        const labelText = this.isOnline ? `P1` : `${this.level.id}-Solo`;
+        this.playerLabel = this.add.text(x, y - 20, labelText, {
             fontSize: '12px',
             color: '#fff',
             backgroundColor: '#7c7cff',
             padding: { x: 4, y: 2 }
         }).setOrigin(0.5);
 
-        // 碰撞
         this.physics.add.collider(this.player, this.platforms);
         this.physics.add.collider(this.player, this.grounds);
     }
 
-    createLevel() {
-        const T = 32;
-
+    createLevel(levelData) {
         this.movingPlatformGroup = this.physics.add.group();
 
-        // 起点平台
-        this.createPlatform(0, 700, 6);
-
-        // 阶梯式平台
-        for (let i = 0; i < 5; i++) {
-            this.createPlatform(200 + i * 150, 650 - i * 50, 3);
-            if (i % 2 === 0) {
-                this.createCoin(200 + i * 150 + 32, 620 - i * 50);
+        for (const el of levelData.elements) {
+            switch (el.type) {
+                case 'platform':
+                    this.createPlatform(el.x, el.y, el.w);
+                    break;
+                case 'finish':
+                    this.createFinishPlatform(el.x, el.y, el.w);
+                    break;
+                case 'coin':
+                    this.createCoin(el.x, el.y);
+                    break;
+                case 'hazard':
+                    this.createHazard(el.x, el.y, el.count);
+                    break;
+                case 'bounce':
+                    this.createBouncePad(el.x, el.y);
+                    break;
+                case 'moving':
+                    this.createMovingPlatform(el.x, el.y, el.w, el.dir === 'h' ? 'horizontal' : 'vertical', el.dist, el.speed);
+                    break;
+                case 'ice':
+                    this.createIcePlatform(el.x, el.y, el.w);
+                    break;
+                case 'fire':
+                    this.createFire(el.x, el.y, el.w, el.dir === 'h' ? 'horizontal' : 'vertical', el.dist, el.speed);
+                    break;
             }
         }
 
-        // 危险区域 - 钉子
-        this.createHazard(800, 700 - 16, 4);
-
-        // 间隔跳跃平台
-        this.createPlatform(950, 400, 4);
-        this.createCoin(970, 370);
-        this.createCoin(1010, 370);
-
-        this.createPlatform(1150, 350, 3);
-
-        // 移动平台
-        this.createMovingPlatform(1350, 450, 5, 'horizontal', 100, 2);
-        this.createCoin(1400, 420);
-
-        // 弹跳垫
-        this.createBouncePad(1500, 380);
-
-        this.createPlatform(1650, 320, 3);
-        this.createCoin(1666, 290);
-
-        // 危险平台
-        this.createPlatform(1750, 280, 4);
-        this.createHazard(1766, 248, 2);
-
-        // 移动平台 - 垂直
-        this.createMovingPlatform(1850, 350, 3, 'vertical', 80, 2);
-
-        // 终点平台
-        this.createFinishPlatform(1950, 250, 4);
-        this.createCoin(1970, 220);
-        this.createCoin(2010, 220);
-
-        // 装饰物 - 树
-        this.createTree(50, 680);
-        this.createTree(150, 680);
+        // 装饰
+        this.createTree(50, levelData.worldHeight - 96);
+        this.createTree(150, levelData.worldHeight - 96);
     }
 
-    createMovingPlatform(x, y, width, direction, distance, speed) {
+    createPlatform(x, y, width) {
         const T = 32;
-        const platform = this.physics.add.sprite(x + (width * T) / 2, y, 'moving_platform');
+        for (let i = 0; i < width; i++) {
+            const block = this.platforms.create(x + i * T, y, 'platform');
+            block.setOrigin(0.5, 0.5);
+            block.body.setSize(T - 2, T - 2);
+            block.refreshBody();
+        }
+    }
 
-        platform.setOrigin(0.5, 0.5);
-        platform.body.setSize(width * T - 4, T - 4);
-        platform.setImmovable(true);
-        platform.body.allowGravity = false;
-        platform.setCollideWorldBounds(true);
+    createFinishPlatform(x, y, width) {
+        const T = 32;
+        for (let i = 0; i < width; i++) {
+            const block = this.platforms.create(x + i * T, y, 'finish');
+            block.setOrigin(0.5, 0.5);
+            block.body.setSize(T - 2, T - 2);
+            block.refreshBody();
+        }
+    }
 
-        platform.moveData = {
-            direction: direction,
-            distance: distance,
-            speed: speed,
-            startX: platform.x,
-            startY: platform.y,
-            progress: 0
-        };
-
-        this.movingPlatformGroup.add(platform);
-        this.movingPlatforms.push(platform);
-
-        this.physics.add.collider(this.player, platform);
+    createIcePlatform(x, y, width) {
+        // 冰面视觉上用普通platform但不同颜色
+        const T = 32;
+        for (let i = 0; i < width; i++) {
+            const block = this.platforms.create(x + i * T, y, 'platform');
+            block.setOrigin(0.5, 0.5);
+            block.body.setSize(T - 2, T - 2);
+            // 冰面物理：减少摩擦（通过高drag，在handleInput或createPlayer中处理）
+            block.refreshBody();
+        }
     }
 
     createCoin(x, y) {
@@ -289,8 +345,31 @@ class GameScene extends Phaser.Scene {
         }
     }
 
+    // 移动火焰（会移动的钉子行）
+    createFire(x, y, width, direction, distance, speed) {
+        const T = 32;
+        const fire = this.physics.add.sprite(x + (width * T) / 2, y, 'danger');
+        fire.setOrigin(0.5, 0.5);
+        fire.body.setSize(width * T - 4, T - 4);
+        fire.body.allowGravity = false;
+        fire.setImmovable(true);
+        fire.setTint(0xff6600); // 橙色区分于普通钉子
+
+        fire.moveData = {
+            direction: direction,
+            distance: distance,
+            speed: speed,
+            startX: fire.x,
+            startY: fire.y,
+            progress: 0
+        };
+
+        this.physics.add.collider(this.player, fire, () => this.hitHazard());
+        this.fires.push(fire);
+    }
+
     hitHazard() {
-        if (this.isRespawning) return;
+        if (this.isRespawning || !this.gameStarted) return;
 
         this.isRespawning = true;
         this.cameras.main.shake(200, 0.02);
@@ -300,7 +379,7 @@ class GameScene extends Phaser.Scene {
             alpha: 0,
             duration: 200,
             onComplete: () => {
-                this.player.setPosition(100, 500);
+                this.player.setPosition(this.level.startX, this.level.startY);
                 this.player.setVelocity(0, 0);
                 this.player.setAlpha(1);
                 this.isRespawning = false;
@@ -327,30 +406,33 @@ class GameScene extends Phaser.Scene {
         }
     }
 
-    createPlatform(x, y, width) {
+    createMovingPlatform(x, y, width, direction, distance, speed) {
         const T = 32;
-        for (let i = 0; i < width; i++) {
-            const block = this.platforms.create(x + i * T, y, 'platform');
-            block.setOrigin(0.5, 0.5);
-            block.body.setSize(T - 2, T - 2);
-            block.refreshBody();
-        }
-    }
+        const platform = this.physics.add.sprite(x + (width * T) / 2, y, 'moving_platform');
 
-    createFinishPlatform(x, y, width) {
-        const T = 32;
-        for (let i = 0; i < width; i++) {
-            const block = this.platforms.create(x + i * T, y, 'finish');
-            block.setOrigin(0.5, 0.5);
-            block.body.setSize(T - 2, T - 2);
-            block.refreshBody();
-        }
+        platform.setOrigin(0.5, 0.5);
+        platform.body.setSize(width * T - 4, T - 4);
+        platform.setImmovable(true);
+        platform.body.allowGravity = false;
+        platform.setCollideWorldBounds(true);
+
+        platform.moveData = {
+            direction: direction,
+            distance: distance,
+            speed: speed,
+            startX: platform.x,
+            startY: platform.y,
+            progress: 0
+        };
+
+        this.movingPlatformGroup.add(platform);
+        this.movingPlatforms.push(platform);
+
+        this.physics.add.collider(this.player, platform);
     }
 
     createTree(x, y) {
-        // 树干
         this.add.rectangle(x, y + 20, 16, 40, 0x8B4513);
-        // 树冠
         this.add.rectangle(x, y - 10, 40, 40, 0x228B22);
     }
 
@@ -364,29 +446,15 @@ class GameScene extends Phaser.Scene {
         };
         this.spaceKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
 
-        // 用于平滑输入
-        this.inputState = {
-            left: false,
-            right: false,
-            jump: false
-        };
+        this.inputState = { left: false, right: false, jump: false };
     }
 
     setupNetworkEvents() {
         if (this.isOnline && this.network) {
-            this.network.events.on('player_joined', (data) => {
-                this.addRemotePlayer(data);
-            });
+            this.network.events.on('player_joined', (data) => this.addRemotePlayer(data));
+            this.network.events.on('player_left', (data) => this.removeRemotePlayer(data.playerId));
+            this.network.events.on('game_state', (data) => this.updateRemotePlayers(data));
 
-            this.network.events.on('player_left', (data) => {
-                this.removeRemotePlayer(data.playerId);
-            });
-
-            this.network.events.on('game_state', (data) => {
-                this.updateRemotePlayers(data);
-            });
-
-            // 发送本地玩家位置
             this.time.addEvent({
                 delay: 50,
                 callback: () => this.sendPosition(),
@@ -399,11 +467,10 @@ class GameScene extends Phaser.Scene {
         if (data.playerId === this.playerId) return;
 
         const remote = this.physics.add.sprite(data.x || 100, data.y || 500, 'player');
-        remote.setTint(0xff7c7c); // 不同颜色区分
+        remote.setTint(0xff7c7c);
         remote.setCollideWorldBounds(true);
         remote.body.setSize(28, 28);
 
-        // 标签
         const label = this.add.text(data.x || 100, (data.y || 500) - 20, data.playerName || 'P2', {
             fontSize: '12px',
             color: '#fff',
@@ -424,7 +491,6 @@ class GameScene extends Phaser.Scene {
     }
 
     updateRemotePlayers(gameState) {
-        // 更新其他玩家位置
         if (gameState.players) {
             for (const [id, data] of Object.entries(gameState.players)) {
                 if (id === this.playerId) continue;
@@ -456,15 +522,34 @@ class GameScene extends Phaser.Scene {
 
     update(time, delta) {
         if (!this.gameStarted) return;
+
         this.handleInput();
         this.updatePlayerLabel();
         this.updateMovingPlatforms(delta);
+        this.updateFires(delta);
         this.checkWinCondition();
         this.checkFailCondition();
     }
 
+    updateFires(delta) {
+        const dt = delta ? delta / 1000 : 0.016;
+        for (const fire of this.fires) {
+            const data = fire.moveData;
+            if (!data) continue;
+
+            data.progress += data.speed * dt;
+            const t = Math.sin(data.progress);
+
+            if (data.direction === 'horizontal') {
+                fire.x = data.startX + t * data.distance;
+            } else if (data.direction === 'vertical') {
+                fire.y = data.startY + t * data.distance;
+            }
+        }
+    }
+
     checkFailCondition() {
-        if (this.player.y > 850) {
+        if (this.player.y > this.level.worldHeight + 50) {
             this.showFailScreen();
         }
     }
@@ -489,42 +574,17 @@ class GameScene extends Phaser.Scene {
             }).setOrigin(0.5).setScrollFactor(0);
 
             this.add.text(cam.scrollX + cam.width / 2, cam.scrollY + cam.height / 2 - 60,
-                `本次得分: ${this.score}  |  金币: ${this.collectedCoins}`, {
+                `得分: ${this.score}  |  金币: ${this.collectedCoins}`, {
                 fontSize: '22px',
                 color: '#ffffff',
-                fontFamily: 'Arial'
-            }).setOrigin(0.5).setScrollFactor(0);
-
-            this.add.text(cam.scrollX + cam.width / 2, cam.scrollY + cam.height / 2 - 20,
-                `排名: 第 ${rank} 名`, {
-                fontSize: '20px',
-                color: rank <= 3 ? '#FFD700' : '#aaaaaa',
                 fontFamily: 'Arial'
             }).setOrigin(0.5).setScrollFactor(0);
 
             this.showScoreBoard(cam);
+            this.addMenuButtons(cam, false);
 
-            // 返回菜单按钮
-            const menuBtnFail = this.add.text(cam.scrollX + cam.width / 2, cam.scrollY + cam.height / 2 + 180,
-                '🏠 返回菜单', {
-                fontSize: '22px',
-                color: '#ffffff',
-                fontFamily: 'Arial',
-                backgroundColor: '#7c7cff',
-                padding: { x: 20, y: 10 }
-            }).setOrigin(0.5).setScrollFactor(0).setDepth(100).setInteractive({ useHandCursor: true });
-
-            menuBtnFail.on('pointerover', () => menuBtnFail.setAlpha(0.8));
-            menuBtnFail.on('pointerout', () => menuBtnFail.setAlpha(1));
-            menuBtnFail.on('pointerdown', () => {
-                if (this.isOnline && this.network) {
-                    this.network.leaveRoom();
-                }
-                this.scene.start('MenuScene');
-            });
-
+            // 重试计时
             this.time.delayedCall(5000, () => {
-                if (menuBtnFail) menuBtnFail.destroy();
                 this.scene.restart();
             });
         });
@@ -537,7 +597,6 @@ class GameScene extends Phaser.Scene {
             if (!data) continue;
 
             data.progress += data.speed * dt;
-
             const t = Math.sin(data.progress);
 
             if (data.direction === 'horizontal') {
@@ -550,8 +609,9 @@ class GameScene extends Phaser.Scene {
 
     handleInput() {
         const onGround = this.player.body.blocked.down;
+        const drag = this.level.iceMode ? 100 : 800;
 
-        // 水平移动（键盘 + 触摸）
+        // 水平移动
         if (this.cursors.left.isDown || this.wasd.left.isDown || this.touchInput.left) {
             this.player.setVelocityX(-200);
             this.inputState.left = true;
@@ -559,20 +619,20 @@ class GameScene extends Phaser.Scene {
             this.player.setVelocityX(200);
             this.inputState.right = true;
         } else {
+            this.player.setDrag(drag, 0);
             this.inputState.left = false;
             this.inputState.right = false;
         }
 
-        // 跳跃（键盘 + 触摸）
+        // 跳跃
         if ((this.cursors.up.isDown || this.wasd.up.isDown || this.spaceKey.isDown || this.touchInput.jump) && onGround) {
             this.player.setVelocityY(-380);
             this.inputState.jump = true;
-            this.touchInput.jump = false; // 触摸跳跃后重置
+            this.touchInput.jump = false;
         } else {
             this.inputState.jump = false;
         }
 
-        // 发送输入状态（在线模式）
         if (this.isOnline && this.network) {
             this.network.sendInput(this.inputState);
         }
@@ -586,18 +646,18 @@ class GameScene extends Phaser.Scene {
     updateUI() {
         const roomEl = document.getElementById('room-code');
         if (roomEl) {
-            roomEl.textContent = this.isOnline ? `Room: ${this.roomCode}` : 'Room: Solo';
+            roomEl.textContent = this.isOnline ? `Room: ${this.roomCode}` : `关卡${this.level.id}: ${this.level.name}`;
         }
 
         const playerCountEl = document.getElementById('player-count');
         if (playerCountEl) {
-            playerCountEl.textContent = `Coins: ${this.collectedCoins} | Score: ${this.score}`;
+            playerCountEl.textContent = `金币: ${this.collectedCoins} | 得分: ${this.score}`;
         }
     }
 
     checkWinCondition() {
-        // 检测是否到达终点
-        if (this.player.y < 280 && this.player.x > 1850) {
+        const { finishX, finishY, worldHeight } = this.level;
+        if (this.player.y < finishY + 50 && this.player.x > finishX) {
             this.showWinScreen();
         }
     }
@@ -606,8 +666,12 @@ class GameScene extends Phaser.Scene {
         if (this.isShowingResult) return;
         this.isShowingResult = true;
 
+        // 通关奖励分
+        this.score += 500;
+        this.updateUI();
+
         const rank = this.saveScore(this.score, this.collectedCoins);
-        const title = this.isOnline ? 'YOU WIN!' : 'LEVEL COMPLETE!';
+        this.unlockNextLevel();
 
         const cam = this.cameras.main;
         cam.fadeOut(300, 0, 0, 0);
@@ -616,86 +680,93 @@ class GameScene extends Phaser.Scene {
             cam.fadeIn(300, 0, 0, 0);
 
             this.add.text(cam.scrollX + cam.width / 2, cam.scrollY + cam.height / 2 - 120,
-                title, {
-                fontSize: '56px',
+                this.level.id >= 10 ? '🏆 全部通关！' : '通关成功！', {
+                fontSize: '48px',
                 color: '#FFD700',
                 fontFamily: 'Arial Black'
             }).setOrigin(0.5).setScrollFactor(0);
 
-            this.add.text(cam.scrollX + cam.width / 2, cam.scrollY + cam.height / 2 - 60,
-                `本次得分: ${this.score}  |  金币: ${this.collectedCoins}`, {
-                fontSize: '22px',
-                color: '#ffffff',
+            this.add.text(cam.scrollX + cam.width / 2, cam.scrollY + cam.height / 2 - 70,
+                `关卡 ${this.level.id}: ${this.level.name}`, {
+                fontSize: '20px',
+                color: '#aaa',
                 fontFamily: 'Arial'
             }).setOrigin(0.5).setScrollFactor(0);
 
-            this.add.text(cam.scrollX + cam.width / 2, cam.scrollY + cam.height / 2 - 20,
-                `排名: 第 ${rank} 名`, {
-                fontSize: '20px',
-                color: rank <= 3 ? '#FFD700' : '#aaaaaa',
+            this.add.text(cam.scrollX + cam.width / 2, cam.scrollY + cam.height / 2 - 30,
+                `最终得分: ${this.score}  |  金币: ${this.collectedCoins}`, {
+                fontSize: '22px',
+                color: '#ffffff',
                 fontFamily: 'Arial'
             }).setOrigin(0.5).setScrollFactor(0);
 
             this.showScoreBoard(cam);
+            this.addMenuButtons(cam, true);
 
-            // 返回菜单按钮
-            const menuBtnWin = this.add.text(cam.scrollX + cam.width / 2, cam.scrollY + cam.height / 2 + 180,
-                '🏠 返回菜单', {
-                fontSize: '22px',
-                color: '#ffffff',
-                fontFamily: 'Arial',
-                backgroundColor: '#FFD700',
-                padding: { x: 20, y: 10 }
-            }).setOrigin(0.5).setScrollFactor(0).setDepth(100).setInteractive({ useHandCursor: true });
+            if (this.level.id < LEVEL_COUNT) {
+                this.time.delayedCall(5000, () => {
+                    // 自动进入下一关
+                    this.scene.start('GameScene', {
+                        isOnline: false,
+                        levelId: this.level.id + 1
+                    });
+                });
+            }
+        });
+    }
 
-            menuBtnWin.on('pointerover', () => menuBtnWin.setAlpha(0.8));
-            menuBtnWin.on('pointerout', () => menuBtnWin.setAlpha(1));
-            menuBtnWin.on('pointerdown', () => {
-                if (this.isOnline && this.network) {
-                    this.network.leaveRoom();
-                }
-                this.scene.start('MenuScene');
-            });
+    addMenuButtons(cam, isWin) {
+        const btnColor = isWin ? '#FFD700' : '#7c7cff';
+        const menuBtn = this.add.text(cam.scrollX + cam.width / 2, cam.scrollY + cam.height / 2 + 200,
+            '🏠 返回关卡选择', {
+            fontSize: '22px',
+            color: '#ffffff',
+            fontFamily: 'Arial',
+            backgroundColor: btnColor,
+            padding: { x: 20, y: 10 }
+        }).setOrigin(0.5).setScrollFactor(0).setDepth(100).setInteractive({ useHandCursor: true });
 
-            this.time.delayedCall(5000, () => {
-                if (menuBtnWin) menuBtnWin.destroy();
-                this.scene.restart();
-            });
+        menuBtn.on('pointerover', () => menuBtn.setAlpha(0.8));
+        menuBtn.on('pointerout', () => menuBtn.setAlpha(1));
+        menuBtn.on('pointerdown', () => {
+            if (this.isOnline && this.network) {
+                this.network.leaveRoom();
+            }
+            this.scene.start('LevelScene');
         });
     }
 
     showScoreBoard(cam) {
-        const topScores = this.getTopScores();
+        const topScores = this.getTopScores().filter(s => s.levelId === this.levelId);
 
-        this.add.text(cam.scrollX + cam.width / 2, cam.scrollY + cam.height / 2 + 20,
-            '🏆 历史排行榜 🏆', {
+        this.add.text(cam.scrollX + cam.width / 2, cam.scrollY + cam.height / 2 + 40,
+            '🏆 本关排行榜 🏆', {
             fontSize: '18px',
             color: '#FFD700',
             fontFamily: 'Arial'
         }).setOrigin(0.5).setScrollFactor(0);
 
-        const startY = cam.scrollY + cam.height / 2 + 50;
+        const startY = cam.scrollY + cam.height / 2 + 70;
         const displayCount = Math.min(topScores.length, 5);
 
-        for (let i = 0; i < displayCount; i++) {
-            const record = topScores[i];
-            const isCurrent = i + 1 === this.currentRank;
-            const y = startY + i * 24;
-
-            const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`;
-            const text = isCurrent ? `▶ ${medal} ${record.score}分 (${record.coins}金币)` : `${medal} ${record.score}分 (${record.coins}金币)`;
-
-            this.add.text(cam.scrollX + cam.width / 2, y, text, {
-                fontSize: '16px',
-                color: isCurrent ? '#7cff7c' : '#cccccc',
-                fontFamily: 'Arial'
-            }).setOrigin(0.5).setScrollFactor(0);
-        }
-
-        if (topScores.length === 0) {
+        if (displayCount === 0) {
             this.add.text(cam.scrollX + cam.width / 2, startY, '暂无记录', {
                 fontSize: '14px',
                 color: '#888888',
+                fontFamily: 'Arial'
+            }).setOrigin(0.5).setScrollFactor(0);
+            return;
+        }
+
+        for (let i = 0; i < displayCount; i++) {
+            const record = topScores[i];
+            const y = startY + i * 24;
+            const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`;
+            const text = `${medal} ${record.score}分 (${record.coins}金币)`;
+
+            this.add.text(cam.scrollX + cam.width / 2, y, text, {
+                fontSize: '16px',
+                color: i === 0 ? '#FFD700' : '#cccccc',
                 fontFamily: 'Arial'
             }).setOrigin(0.5).setScrollFactor(0);
         }
