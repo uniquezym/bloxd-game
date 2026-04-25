@@ -227,18 +227,10 @@ class GameScene extends Phaser.Scene {
         this.canMove = false;
 
         const cam = this.cameras.main;
-        const cx = cam.scrollX + cam.width / 2;
-        const cy = cam.scrollY + cam.height / 2;
-
-        // 显示"游戏即将开始..."
-        const hintText = this.add.text(cx, cy - 100, '游戏即将开始...', {
-            fontSize: '32px',
-            color: '#ffffff',
-            fontFamily: 'Arial Black'
-        }).setOrigin(0.5).setScrollFactor(0).setDepth(99);
+        const cx = cam.width / 2;
+        const cy = cam.height * 0.35;
 
         const colors = { 3: '#ff4444', 2: '#ffff44', 1: '#44ff44' };
-        let currentCount = 3;
 
         const showNumber = (num) => {
             if (this.countdownText) this.countdownText.destroy();
@@ -263,14 +255,10 @@ class GameScene extends Phaser.Scene {
             });
         };
 
-        // 链式延迟调用显示 3-2-1-GO!
-        this.time.delayedCall(800, () => {
-            hintText.destroy();
-            showNumber(3);
-        });
-        this.time.delayedCall(800 + 800, () => showNumber(2));
-        this.time.delayedCall(800 + 800 + 800, () => showNumber(1));
-        this.time.delayedCall(800 + 800 + 800 + 800, () => {
+        showNumber(3);
+        this.time.delayedCall(800, () => showNumber(2));
+        this.time.delayedCall(1600, () => showNumber(1));
+        this.time.delayedCall(2400, () => {
             showNumber(0);
             this.time.delayedCall(600, () => this.countdownEnd());
         });

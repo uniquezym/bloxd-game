@@ -7,7 +7,6 @@ class LevelScene extends Phaser.Scene {
     create() {
         this.createBackground();
         this.setupUI();
-        this.loadProgress();
     }
 
     createBackground() {
