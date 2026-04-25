@@ -242,21 +242,24 @@ class NetworkManager {
         });
     }
 
-    createRoom() {
+    createRoom(playerName) {
         if (this.connected) {
             this._savedPlayerId = null;
             this._savedRoomCode = null;
             this._isReconnecting = false;
-            this.socket.emit('create_room');
+            this.socket.emit('create_room', { playerName });
+            // 保存名字
+            try { localStorage.setItem('bloxd_player_name', playerName || 'Anonymous'); } catch (e) {}
         }
     }
 
-    joinRoom(roomCode) {
+    joinRoom(roomCode, playerName) {
         if (this.connected) {
             this._savedPlayerId = null;
             this._savedRoomCode = null;
             this._isReconnecting = false;
-            this.socket.emit('join_room', { roomCode: roomCode.toUpperCase() });
+            this.socket.emit('join_room', { roomCode: roomCode.toUpperCase(), playerName });
+            try { localStorage.setItem('bloxd_player_name', playerName || 'Anonymous'); } catch (e) {}
         }
     }
 

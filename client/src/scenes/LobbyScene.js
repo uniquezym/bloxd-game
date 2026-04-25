@@ -284,7 +284,7 @@ class LobbyScene extends Phaser.Scene {
 
             // 玩家名称
             const nameColor = isLocalPlayer ? '#7c7cff' : '#fff';
-            const nameText = this.add.text(-150, y, player.name || `Player ${playerId.slice(0, 4)}`, {
+            const nameText = this.add.text(-150, y, player.playerName || player.name || `Player ${playerId.slice(0, 4)}`, {
                 fontSize: '16px',
                 fontFamily: 'Arial',
                 color: nameColor

@@ -52,13 +52,15 @@ class Room {
         this.players.set(socketId, {
             socketId,
             playerId: playerData.playerId || `player_${this.players.size + 1}`,
+            playerName: playerData.playerName || `Player${this.players.size + 1}`,
             x: 100 + this.players.size * 50,
             y: 500,
             vx: 0,
             vy: 0,
             input: { left: false, right: false, jump: false },
             color: this.getPlayerColor(this.players.size),
-            ready: false
+            ready: false,
+            isReconnecting: false
         });
     }
 
@@ -137,13 +139,13 @@ io.on('connection', (socket) => {
     let playerId = null;
 
     // 创建房间
-    socket.on(CONSTANTS.MSG_TYPES.CREATE_ROOM, () => {
+    socket.on(CONSTANTS.MSG_TYPES.CREATE_ROOM, ({ playerName } = {}) => {
         const roomCode = generateRoomCode();
         const room = new Room(roomCode, socket.id);
         rooms.set(roomCode, room);
 
         playerId = `player_1`;
-        room.addPlayer(socket.id, { playerId });
+        room.addPlayer(socket.id, { playerId, playerName: playerName || `Player${playerId}` });
         currentRoom = roomCode;
 
         // 房主自动 ready
@@ -153,14 +155,15 @@ io.on('connection', (socket) => {
         socket.emit(CONSTANTS.MSG_TYPES.ROOM_CREATED, {
             roomCode,
             playerId,
-            isHost: true
+            isHost: true,
+            playerName: room.players.get(socket.id).playerName
         });
 
-        console.log(`Room created: ${roomCode} by ${socket.id}`);
+        console.log(`Room created: ${roomCode} by ${playerId} (${playerName || 'Anonymous'})`);
     });
 
     // 加入房间
-    socket.on(CONSTANTS.MSG_TYPES.JOIN_ROOM, ({ roomCode }) => {
+    socket.on(CONSTANTS.MSG_TYPES.JOIN_ROOM, ({ roomCode, playerName } = {}) => {
         roomCode = roomCode.toUpperCase();
         const room = rooms.get(roomCode);
 
@@ -175,24 +178,28 @@ io.on('connection', (socket) => {
         }
 
         playerId = `player_${room.players.size + 1}`;
-        room.addPlayer(socket.id, { playerId });
+        room.addPlayer(socket.id, { playerId, playerName: playerName || `Player${playerId}` });
         currentRoom = roomCode;
+
+        const playerData = room.players.get(socket.id);
 
         socket.join(roomCode);
         socket.emit(CONSTANTS.MSG_TYPES.ROOM_JOINED, {
             roomCode,
             playerId,
             isHost: room.hostId === socket.id,
-            players: Array.from(room.players.values())
+            players: Array.from(room.players.values()),
+            playerName: playerData.playerName
         });
 
         // 通知房间内其他玩家
         socket.to(roomCode).emit(CONSTANTS.MSG_TYPES.PLAYER_JOINED, {
             playerId,
-            socketId: socket.id
+            socketId: socket.id,
+            playerName: playerData.playerName
         });
 
-        console.log(`Player ${playerId} joined room ${roomCode}`);
+        console.log(`Player ${playerId} (${playerName || 'Anonymous'}) joined room ${roomCode}`);
     });
 
     // 离开房间

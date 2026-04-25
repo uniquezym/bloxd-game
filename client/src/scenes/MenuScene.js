@@ -50,6 +50,16 @@ class MenuScene extends Phaser.Scene {
         const { width, height } = this.scale;
         const centerY = height * 0.55;
 
+        // 名字输入框
+        this.nameInput = this.add.dom(width / 2, height * 0.25 + 80).createFromHTML(`
+            <input type="text" id="menu-name-input" placeholder="Enter your name"
+                   maxlength="12" value="${this.getSavedName()}" style="
+                padding: 12px 20px; font-size: 18px; border: 2px solid #4a4a6a;
+                border-radius: 8px; background: #2a2a4a; color: #fff;
+                text-align: center; width: 220px;
+            ">
+        `);
+
         // 按钮样式
         const buttonStyle = {
             padding: '15px 40px',
@@ -59,17 +69,19 @@ class MenuScene extends Phaser.Scene {
         };
 
         // 创建房间按钮
-        this.createButton(width / 2, centerY, 'Create Room', '#7c7cff', () => {
-            this.network.createRoom();
+        this.createButton(width / 2, centerY + 20, 'Create Room', '#7c7cff', () => {
+            const name = this.getPlayerName();
+            this.network.createRoom(name);
+            try { localStorage.setItem('bloxd_player_name', name); } catch (e) {}
         });
 
         // 加入房间按钮
-        this.createButton(width / 2, centerY + 60, 'Join Room', '#4a7c59', () => {
+        this.createButton(width / 2, centerY + 80, 'Join Room', '#4a7c59', () => {
             this.showJoinForm();
         });
 
         // 关卡选择按钮
-        this.createButton(width / 2, centerY + 130, '关卡模式', '#ff7c7c', () => {
+        this.createButton(width / 2, centerY + 150, '关卡模式', '#ff7c7c', () => {
             this.scene.start('LevelScene');
         });
 
@@ -120,6 +132,20 @@ class MenuScene extends Phaser.Scene {
         return btn;
     }
 
+    getPlayerName() {
+        const input = document.getElementById('menu-name-input');
+        return input ? (input.value.trim() || `Player${Math.floor(Math.random() * 9999)}`) : 'Anonymous';
+    }
+
+    getSavedName() {
+        try {
+            const saved = localStorage.getItem('bloxd_player_name');
+            return saved || '';
+        } catch (e) {
+            return '';
+        }
+    }
+
     showJoinForm() {
         const input = document.getElementById('menu-room-input');
         const btn = document.getElementById('menu-join-confirm');
@@ -131,7 +157,11 @@ class MenuScene extends Phaser.Scene {
         btn.onclick = () => {
             const code = input.value.trim().toUpperCase();
             if (code.length === 6) {
-                this.network.joinRoom(code);
+                this.network.joinRoom(code, this.getPlayerName());
+                // 保存名字
+                try {
+                    localStorage.setItem('bloxd_player_name', this.getPlayerName());
+                } catch (e) {}
             } else {
                 this.showError('Please enter a 6-character room code');
             }
