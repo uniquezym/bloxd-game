@@ -198,6 +198,45 @@ class LobbyScene extends Phaser.Scene {
                 network: this.network
             });
         });
+
+        // 监听玩家断线（其他人）
+        network.events.on('player_disconnected', (data) => {
+            this.updatePlayerStatus(data.playerId, 'disconnected');
+        });
+
+        // 监听玩家重连（其他人）
+        network.events.on('player_rejoined', (data) => {
+            this.updatePlayerStatus(data.playerId, 'reconnected');
+        });
+
+        // 监听自己重连成功
+        network.events.on('room_rejoined', (data) => {
+            this.roomCode = data.roomCode;
+            this.playerId = data.playerId;
+            this.isHost = data.isHost || false;
+            this.updateHostUI();
+            this.clearPlayers();
+            if (data.players) {
+                data.players.forEach(p => this.addPlayer(p));
+            }
+            this.updatePlayerCount();
+        });
+
+        // 监听重连状态
+        network.events.on('reconnecting', (data) => {
+            this.statusText.setText(`重连中... ${data.attempt}/5`);
+            this.statusText.setColor('#ffaa00');
+        });
+
+        network.events.on('reconnect_failed', () => {
+            this.statusText.setText('重连失败，请重新创建房间');
+            this.statusText.setColor('#ff6b6b');
+        });
+
+        network.events.on('rejoin_attempt', (data) => {
+            this.statusText.setText(`正在恢复会话...`);
+            this.statusText.setColor('#aaa');
+        });
     }
 
     addPlayer(data) {
@@ -269,6 +308,25 @@ class LobbyScene extends Phaser.Scene {
                 color: readyColor
             }).setOrigin(0, 0.5);
             container.add(readyLabel);
+
+            // 连接状态标签
+            if (player.connectionStatus === 'disconnected') {
+                const dcTag = this.add.text(220, y, '🔌 断线', {
+                    fontSize: '12px',
+                    color: '#ff6b6b'
+                }).setOrigin(0, 0.5);
+                container.add(dcTag);
+            } else if (player.connectionStatus === 'reconnected') {
+                const rcTag = this.add.text(220, y, '✅ 已恢复', {
+                    fontSize: '12px',
+                    color: '#4a7c59'
+                }).setOrigin(0, 0.5);
+                container.add(rcTag);
+                this.time.delayedCall(3000, () => {
+                    if (player) player.connectionStatus = null;
+                    this.renderPlayerList();
+                });
+            }
 
             // 踢人按钮 (仅房主可见，且不是自己)
             if (this.isHost && !isLocalPlayer && !isPlayerHost) {
@@ -390,9 +448,17 @@ class LobbyScene extends Phaser.Scene {
         });
     }
 
+    updatePlayerStatus(playerId, status) {
+        const player = this.players.get(playerId);
+        if (player) {
+            player.connectionStatus = status;
+            this.renderPlayerList();
+        }
+    }
+
     returnToMenu() {
         if (this.network && this.network.socket) {
-            this.network.socket.emit('leave_room', { roomCode: this.roomCode });
+            this.network.leaveRoom();
         }
         this.scene.start('MenuScene');
     }

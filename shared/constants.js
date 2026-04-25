@@ -32,8 +32,11 @@ const CONSTANTS = {
     // 服务器 -> 客户端
     ROOM_CREATED: 'room_created',
     ROOM_JOINED: 'room_joined',
+    ROOM_REJOINED: 'room_rejoined',
     PLAYER_JOINED: 'player_joined',
     PLAYER_LEFT: 'player_left',
+    PLAYER_DISCONNECTED: 'player_disconnected',
+    PLAYER_REJOINED: 'player_rejoined',
     PLAYER_READY_STATE: 'player_ready_state',
     PLAYER_KICKED: 'player_kicked',
     GAME_STATE: 'game_state',

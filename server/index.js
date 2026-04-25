@@ -67,8 +67,38 @@ class Room {
         return colors[index % colors.length];
     }
 
+    markDisconnected(socketId) {
+        const player = this.players.get(socketId);
+        if (player) {
+            player.disconnectedAt = Date.now();
+            player.isReconnecting = true;
+        }
+    }
+
+    markReconnected(socketId) {
+        const player = this.players.get(socketId);
+        if (player) {
+            player.disconnectedAt = null;
+            player.isReconnecting = false;
+        }
+    }
+
+    isPlayerReconnecting(socketId) {
+        const player = this.players.get(socketId);
+        return player && player.isReconnecting === true;
+    }
+
     removePlayer(socketId) {
         this.players.delete(socketId);
+    }
+
+    getReconnectingPlayer(playerId) {
+        for (const [socketId, player] of this.players) {
+            if (player.playerId === playerId && player.isReconnecting) {
+                return { socketId, player };
+            }
+        }
+        return null;
     }
 
     updatePlayer(socketId, data) {
@@ -271,22 +301,64 @@ io.on('connection', (socket) => {
 
     // 断开连接
     socket.on('disconnect', () => {
-        console.log(`Player disconnected: ${socket.id}`);
+        console.log(`Player disconnected: ${socket.id}, playerId: ${playerId}`);
         if (currentRoom) {
             const room = rooms.get(currentRoom);
             if (room) {
-                room.removePlayer(socket.id);
-                socket.to(currentRoom).emit(CONSTANTS.MSG_TYPES.PLAYER_LEFT, {
+                // 标记为重连中，保留玩家状态
+                room.markDisconnected(socket.id);
+                socket.to(currentRoom).emit(CONSTANTS.MSG_TYPES.PLAYER_DISCONNECTED, {
                     socketId: socket.id,
                     playerId
                 });
-
-                if (room.isEmpty()) {
-                    rooms.delete(currentRoom);
-                    console.log(`Room ${currentRoom} deleted (empty)`);
-                }
             }
         }
+    });
+
+    // 重连恢复
+    socket.on('rejoin_room', ({ playerId: reconnectPlayerId }) => {
+        console.log(`Rejoin attempt: playerId=${reconnectPlayerId}, socketId=${socket.id}`);
+        
+        for (const [roomCode, room] of rooms) {
+            const found = room.getReconnectingPlayer(reconnectPlayerId);
+            if (found) {
+                const oldSocketId = found.socketId;
+                const playerData = found.player;
+
+                room.removePlayer(oldSocketId, false);
+
+                playerData.socketId = socket.id;
+                playerData.isReconnecting = false;
+                room.players.set(socket.id, playerData);
+
+                currentRoom = roomCode;
+                playerId = reconnectPlayerId;
+
+                socket.join(roomCode);
+                socket.emit(CONSTANTS.MSG_TYPES.ROOM_REJOINED, {
+                    roomCode,
+                    playerId,
+                    isHost: room.hostId === socket.id,
+                    players: Array.from(room.players.values()),
+                    gameState: room.gameState
+                });
+
+                socket.to(roomCode).emit(CONSTANTS.MSG_TYPES.PLAYER_REJOINED, {
+                    socketId: socket.id,
+                    playerId: reconnectPlayerId
+                });
+
+                console.log(`Player ${reconnectPlayerId} rejoined room ${roomCode}`);
+                return;
+            }
+        }
+
+        socket.emit(CONSTANTS.MSG_TYPES.ERROR, { message: 'No session to rejoin' });
+    });
+
+    // Ping测量延迟
+    socket.on('ping', (timestamp) => {
+        socket.emit('pong', { timestamp });
     });
 });
 
